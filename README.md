@@ -27,6 +27,7 @@ npm run db:stop
   - `avanzar_pedido` y `confirmar_efectivo`: acciones del comercio dueño.
   - `validar_retiro`: PIN de un solo uso; exige el pago hecho.
   - `expirar_pedidos`: 72 h efectivo y 14 días QR; se puede reejecutar sin doble efecto.
+- `supabase/migrations/20261003010000_realtime_y_cron.sql`: **Realtime** sobre `pedidos` (cada usuario recibe sólo los pedidos que su RLS le deja ver; `credenciales_retiro` no se difunde) y job de `pg_cron` `expirar-pedidos` que ejecuta `expirar_pedidos()` cada minuto.
 - `supabase/seed.sql`: catálogo ficticio y cuentas de demostración (contraseña `demo1234`): `cliente@`, `cliente2@`, `techzone@`, `boutique@` y `admin@paseoya.demo`. El registro libre siempre crea CLIENTE; COMERCIO y ADMIN sólo los asigna el seed o un ADMIN.
 - `supabase/tests/`: `npm run test:db` (RLS y flujo, 17 comprobaciones, en una transacción revertida) y `npm run test:concurrencia` (dos compras simultáneas de la última unidad).
 
