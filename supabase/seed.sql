@@ -1,0 +1,1 @@
+-- Seed sintético de desarrollo local. Vacío hasta BE-02; sólo datos ficticios (DEC-15).
