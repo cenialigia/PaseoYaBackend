@@ -33,7 +33,7 @@ npm run db:stop
 
 No hay proyecto cloud conectado. No versionar `.env`, la `service_role` ni las claves de un proyecto remoto.
 
-> Estado: esquema con RLS y funciones probados localmente (`npm run test:db`, 28 comprobaciones). La app ya está conectada a este backend (INT-01/02).
+> Estado: esquema con RLS y funciones probados localmente (`npm run test:db`, 33 comprobaciones). La app ya está conectada a este backend (INT-01/02).
 
 ## F14 · lote Cliente
 
@@ -54,4 +54,14 @@ La recuperación de contraseña envía un código de 6 dígitos (plantilla `supa
 - Retiro en dos pasos (DEC-F14-14): `verificar_retiro(codigo, pedido?)` acepta el QR del ticket (`paseoya:retiro:<pedido>:<pin>`) o el PIN y no consume nada; `confirmar_entrega(pedido, codigo)` vuelve a verificar con el pedido bloqueado, exige el pago hecho y consume la credencial. Sustituye a `validar_retiro`.
 - Avisos para las cuentas del comercio: pedido nuevo, pago QR recibido, cancelación y vencimiento.
 - Un producto con pedidos no se puede borrar (clave foránea); el comercio lo desactiva.
+
+## F14 · lote Administrador
+
+`20261006000000_f14_admin.sql` añade:
+- `auditoria_admin`: cada alta, cambio o baja que hace un ADMIN en comercios, categorías, promociones, productos y perfiles queda registrada por disparador (sólo lectura para el admin).
+- El admin sólo activa o desactiva productos (`proteger_producto_admin`); precio, stock, altas y bajas son del comercio.
+- `crear_comercio(...)`: crea el comercio (cerrado) y su cuenta COMERCIO con correo y contraseña inicial.
+- `perfiles.activo` y `cambiar_estado_usuario`: desactivar bloquea el inicio de sesión (`banned_until`); el admin no puede desactivarse a sí mismo.
+- `listar_usuarios()`: usuarios con su correo, sólo para el admin.
+- Avisos de promociones: al admin cuando un comercio propone una y al comercio cuando se aprueba o rechaza.
 

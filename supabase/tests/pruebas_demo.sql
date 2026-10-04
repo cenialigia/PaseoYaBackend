@@ -18,6 +18,7 @@ $$;
 \set cliB   '''00000000-0000-0000-0000-0000000000a2'''
 \set tech   '''00000000-0000-0000-0000-0000000000b1'''
 \set bout   '''00000000-0000-0000-0000-0000000000b2'''
+\set admin  '''00000000-0000-0000-0000-0000000000c1'''
 
 -- T-CHECKOUT · confirmar e idempotencia -------------------------------------------
 select pg_temp.como(:cliA);
@@ -352,6 +353,98 @@ do $$
 begin
   if public.verificar_retiro((select v from ctx where k = 'pin'))->>'resultado' <> 'ajeno' then raise exception 'FAIL un cliente usó verificar_retiro'; end if;
   raise notice 'PASS F14 sólo el comercio puede verificar retiros';
+end $$;
+
+-- F14 · Administrador -------------------------------------------------------------
+reset role;
+select pg_temp.como(:tech);
+do $$
+begin
+  insert into public.promociones (producto_id, porcentaje, fin) values ('20000000-0000-0000-0000-000000000002', 12, now() + interval '5 days');
+  raise notice 'PASS F14 admin: TechStore propone una promoción (queda PENDIENTE)';
+end $$;
+
+reset role;
+select pg_temp.como(:admin);
+do $$
+declare v_promo uuid; v_comercio uuid; n int;
+begin
+  if not exists (select 1 from public.notificaciones where titulo = 'Promoción por revisar') then raise exception 'FAIL el admin no recibió la promoción por revisar'; end if;
+  select id into v_promo from public.promociones where estado = 'PENDIENTE' and porcentaje = 12;
+  update public.promociones set estado = 'APROBADA' where id = v_promo;
+  if (select estado from public.promociones where id = v_promo) <> 'APROBADA' then raise exception 'FAIL el admin no pudo aprobar'; end if;
+  insert into public.promociones (producto_id, porcentaje, fin, estado) values ('20000000-0000-0000-0000-000000000003', 20, now() + interval '3 days', 'APROBADA') returning id into v_promo;
+  if (select estado from public.promociones where id = v_promo) <> 'APROBADA' then raise exception 'FAIL la promoción del admin no quedó aprobada'; end if;
+
+  update public.productos set activo = false where id = '20000000-0000-0000-0000-000000000003';
+  get diagnostics n = row_count;
+  if n <> 1 then raise exception 'FAIL el admin no pudo desactivar un producto'; end if;
+  begin
+    update public.productos set precio = 1 where id = '20000000-0000-0000-0000-000000000003';
+    raise exception 'FAIL el admin cambió un precio';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into public.productos (comercio_id, nombre, precio, stock) values ('10000000-0000-0000-0000-000000000001', 'X', 1, 1);
+    raise exception 'FAIL el admin creó un producto';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.avanzar_pedido((select v::uuid from ctx where k = 'pedido'));
+    raise exception 'FAIL el admin avanzó un pedido';
+  exception when insufficient_privilege then null;
+  end;
+
+  v_comercio := public.crear_comercio('Librería Central', '30000000-0000-0000-0000-000000000004', 'Piso 1', 'Local 140', 'libreria@paseoya.demo', 'clave-segura-1');
+  if not exists (select 1 from public.listar_usuarios() u where u.email = 'libreria@paseoya.demo' and u.rol = 'COMERCIO' and u.comercio_id = v_comercio) then
+    raise exception 'FAIL crear_comercio no dejó la cuenta COMERCIO enlazada';
+  end if;
+  begin
+    perform public.crear_comercio('Otra', '30000000-0000-0000-0000-000000000004', 'Piso 1', 'Local 141', 'libreria@paseoya.demo', 'clave-segura-1');
+    raise exception 'FAIL se repitió el correo de un comercio';
+  exception when unique_violation then null;
+  end;
+
+  perform public.cambiar_estado_usuario('00000000-0000-0000-0000-0000000000a2', false);
+  if (select activo from public.perfiles where id = '00000000-0000-0000-0000-0000000000a2') then
+    raise exception 'FAIL desactivar no bloqueó al usuario';
+  end if;
+  begin
+    perform public.cambiar_estado_usuario(auth.uid(), false);
+    raise exception 'FAIL el admin se desactivó a sí mismo';
+  exception when raise_exception then null;
+  end;
+  if (select count(*) from public.listar_usuarios() where email like '%@paseoya.demo') < 7 then raise exception 'FAIL listar_usuarios incompleto'; end if;
+  if (select count(*) from public.auditoria_admin) < 5 then raise exception 'FAIL faltan registros de auditoría'; end if;
+  raise notice 'PASS F14 admin aprueba promociones, sólo activa productos, crea comercios con cuenta, desactiva usuarios y queda auditado';
+end $$;
+
+reset role;
+do $$
+begin
+  if (select banned_until from auth.users where id = '00000000-0000-0000-0000-0000000000a2') is null then raise exception 'FAIL el usuario desactivado puede iniciar sesión'; end if;
+  if not exists (select 1 from auth.identities i join auth.users u on u.id = i.user_id where u.email = 'libreria@paseoya.demo') then raise exception 'FAIL la cuenta del comercio no tiene identidad de correo'; end if;
+  raise notice 'PASS F14 el usuario desactivado queda bloqueado en Auth y la cuenta nueva tiene identidad';
+end $$;
+
+select pg_temp.como(:bout);
+do $$
+begin
+  begin
+    perform public.listar_usuarios();
+    raise exception 'FAIL un comercio listó usuarios';
+  exception when insufficient_privilege then null;
+  end;
+  if exists (select 1 from public.auditoria_admin) then raise exception 'FAIL un comercio ve la auditoría'; end if;
+  raise notice 'PASS F14 sólo el admin lista usuarios y ve la auditoría';
+end $$;
+
+reset role;
+select pg_temp.como(:tech);
+do $$
+begin
+  if not exists (select 1 from public.notificaciones where titulo = 'Promoción aprobada') then raise exception 'FAIL TechStore no recibió el aviso de aprobación'; end if;
+  raise notice 'PASS F14 el comercio recibe el aviso de promoción aprobada';
 end $$;
 
 reset role;
