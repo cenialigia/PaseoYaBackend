@@ -244,6 +244,11 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
+# Recuperación con código de 6 dígitos (DEC-F14-09): la app lo pide junto a la nueva contraseña, sin enlaces profundos.
+[auth.email.template.recovery]
+subject = "Tu código para recuperar la contraseña de PaseoYa"
+content_path = "./supabase/templates/recuperar.html"
+
 # Uncomment to customize email template
 # [auth.email.template.invite]
 # subject = "You have been invited"

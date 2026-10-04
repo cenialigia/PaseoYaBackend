@@ -28,9 +28,22 @@ npm run db:stop
   - `validar_retiro`: PIN de un solo uso; exige el pago hecho.
   - `expirar_pedidos`: 72 h efectivo y 14 días QR; se puede reejecutar sin doble efecto.
 - `supabase/migrations/20261003010000_realtime_y_cron.sql`: **Realtime** sobre `pedidos` (cada usuario recibe sólo los pedidos que su RLS le deja ver; `credenciales_retiro` no se difunde) y job de `pg_cron` `expirar-pedidos` que ejecuta `expirar_pedidos()` cada minuto.
-- `supabase/seed.sql`: catálogo ficticio y cuentas de demostración (contraseña `demo1234`): `cliente@`, `cliente2@`, `techzone@`, `boutique@` y `admin@paseoya.demo`. El registro libre siempre crea CLIENTE; COMERCIO y ADMIN sólo los asigna el seed o un ADMIN.
+- `supabase/seed.sql`: catálogo ficticio y cuentas de demostración (contraseña `demo1234`): `cliente@`, `cliente2@`, `techstore@`, `fashion@`, `saborcriollo@` y `admin@paseoya.demo`. Datos de tiendas y productos tomados de los mosaicos F14 (DEC-F14-12). El registro libre siempre crea CLIENTE; COMERCIO y ADMIN sólo los asigna el seed o un ADMIN.
 - `supabase/tests/`: `npm run test:db` (RLS y flujo, 17 comprobaciones, en una transacción revertida) y `npm run test:concurrencia` (dos compras simultáneas de la última unidad).
 
 No hay proyecto cloud conectado. No versionar `.env`, la `service_role` ni las claves de un proyecto remoto.
 
 > Estado: esquema de la demo con RLS y funciones probados localmente. La app todavía usa datos simulados; la integración (INT-01) queda fuera del plazo de la entrega.
+
+## F14 · lote Cliente
+
+`20261004000000_f14_cliente.sql` añade:
+- Perfil ampliado: teléfono, género, nacimiento y avatar, editables sólo por su dueño (permisos de columna). `contacto_cliente` da el teléfono al comercio dueño sólo en pedidos activos.
+- Tabla `categorias`.
+- `promociones` en porcentaje: las de comercio quedan PENDIENTE hasta que el admin las aprueba; `precio_vigente` las aplica en `confirmar_pedido` y el precio se congela en el pedido.
+- `favoritos` y `notificaciones` (generadas por trigger al cambiar un pedido, con Realtime).
+- `productos_mas_pedidos`.
+- Buckets de Storage `avatares` (privado por usuario) e `imagenes` (público; escribe el comercio en su carpeta).
+
+La recuperación de contraseña envía un código de 6 dígitos (plantilla `supabase/templates/recuperar.html`; en local se lee en Mailpit).
+
