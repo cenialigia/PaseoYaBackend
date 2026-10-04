@@ -25,7 +25,7 @@ npm run db:stop
   - `simular_pago`: pago QR simulado; no mueve dinero.
   - `cancelar_pedido`: sólo en `CONFIRMED`; libera el stock una vez.
   - `avanzar_pedido` y `confirmar_efectivo`: acciones del comercio dueño.
-  - `validar_retiro`: PIN de un solo uso; exige el pago hecho.
+  - `verificar_retiro` (QR del ticket o PIN, no consume) y `confirmar_entrega` (consume la credencial de un uso; exige el pago hecho).
   - `expirar_pedidos`: 72 h efectivo y 14 días QR; se puede reejecutar sin doble efecto.
 - `supabase/migrations/20261003010000_realtime_y_cron.sql`: **Realtime** sobre `pedidos` (cada usuario recibe sólo los pedidos que su RLS le deja ver; `credenciales_retiro` no se difunde) y job de `pg_cron` `expirar-pedidos` que ejecuta `expirar_pedidos()` cada minuto.
 - `supabase/seed.sql`: catálogo ficticio y cuentas de demostración (contraseña `demo1234`): `cliente@`, `cliente2@`, `techstore@`, `fashion@`, `saborcriollo@` y `admin@paseoya.demo`. Datos de tiendas y productos tomados de los mosaicos F14 (DEC-F14-12). El registro libre siempre crea CLIENTE; COMERCIO y ADMIN sólo los asigna el seed o un ADMIN.
@@ -33,7 +33,7 @@ npm run db:stop
 
 No hay proyecto cloud conectado. No versionar `.env`, la `service_role` ni las claves de un proyecto remoto.
 
-> Estado: esquema de la demo con RLS y funciones probados localmente. La app todavía usa datos simulados; la integración (INT-01) queda fuera del plazo de la entrega.
+> Estado: esquema con RLS y funciones probados localmente (`npm run test:db`, 28 comprobaciones). La app ya está conectada a este backend (INT-01/02).
 
 ## F14 · lote Cliente
 
@@ -46,4 +46,12 @@ No hay proyecto cloud conectado. No versionar `.env`, la `service_role` ni las c
 - Buckets de Storage `avatares` (privado por usuario) e `imagenes` (público; escribe el comercio en su carpeta).
 
 La recuperación de contraseña envía un código de 6 dígitos (plantilla `supabase/templates/recuperar.html`; en local se lee en Mailpit).
+
+## F14 · lote Comercio
+
+`20261005000000_f14_comercio.sql` añade:
+- `comercios.horario`. El comercio edita descripción, horario, foto y abierto/cerrado; el disparador `proteger_comercio` reserva nombre, categoría, piso, local y estado al admin (DEC-F14-07).
+- Retiro en dos pasos (DEC-F14-14): `verificar_retiro(codigo, pedido?)` acepta el QR del ticket (`paseoya:retiro:<pedido>:<pin>`) o el PIN y no consume nada; `confirmar_entrega(pedido, codigo)` vuelve a verificar con el pedido bloqueado, exige el pago hecho y consume la credencial. Sustituye a `validar_retiro`.
+- Avisos para las cuentas del comercio: pedido nuevo, pago QR recibido, cancelación y vencimiento.
+- Un producto con pedidos no se puede borrar (clave foránea); el comercio lo desactiva.
 

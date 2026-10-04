@@ -71,3 +71,7 @@ update public.perfiles set rol = 'COMERCIO', comercio_id = '10000000-0000-0000-0
 update public.perfiles set rol = 'COMERCIO', comercio_id = '10000000-0000-0000-0000-000000000002' where id = '00000000-0000-0000-0000-0000000000b2';
 update public.perfiles set rol = 'COMERCIO', comercio_id = '10000000-0000-0000-0000-000000000004' where id = '00000000-0000-0000-0000-0000000000b3';
 update public.perfiles set rol = 'ADMIN' where id = '00000000-0000-0000-0000-0000000000c1';
+
+-- Horario de atención (DEC-F14-07: lo edita cada comercio).
+update public.comercios set horario = 'Lun a dom · 10:00 a 22:00';
+update public.comercios set horario = 'Lun a dom · 11:00 a 21:00' where id = '10000000-0000-0000-0000-000000000004';

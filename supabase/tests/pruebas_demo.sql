@@ -82,7 +82,7 @@ begin
   update public.productos set precio = 1 where comercio_id = '10000000-0000-0000-0000-000000000001';
   get diagnostics n = row_count;
   if n <> 0 then raise exception 'FAIL Boutique modificó productos de TechZone'; end if;
-  if public.validar_retiro((select v::uuid from ctx where k = 'pedido'), '000000') <> 'ajeno' then raise exception 'FAIL Boutique validó un retiro ajeno'; end if;
+  if public.confirmar_entrega((select v::uuid from ctx where k = 'pedido'), '000000') <> 'ajeno' then raise exception 'FAIL Boutique entregó un retiro ajeno'; end if;
   raise notice 'PASS T-RLS Boutique no ve, no avanza, no valida pedidos de TechZone ni edita sus productos';
 end $$;
 
@@ -115,9 +115,10 @@ select pg_temp.como(:tech);
 do $$
 declare id uuid := (select v::uuid from ctx where k = 'pedido'); pin text := (select v from ctx where k = 'pin');
 begin
-  if public.validar_retiro(id, '999999') <> 'pin-incorrecto' and pin <> '999999' then raise exception 'FAIL PIN incorrecto aceptado'; end if;
-  if public.validar_retiro(id, pin) <> 'pago-pendiente' then raise exception 'FAIL se entregó con el pago pendiente'; end if;
-  raise notice 'PASS T-RET PIN incorrecto rechazado; con el pago pendiente no se entrega';
+  if pin <> '999999' and public.verificar_retiro('999999', id)->>'resultado' <> 'pin-incorrecto' then raise exception 'FAIL PIN incorrecto aceptado'; end if;
+  if public.verificar_retiro(pin, id)->>'resultado' <> 'ok' or not (public.verificar_retiro(pin, id)->>'pago_pendiente')::boolean then raise exception 'FAIL verificar no avisa el pago pendiente'; end if;
+  if public.confirmar_entrega(id, pin) <> 'pago-pendiente' then raise exception 'FAIL se entregó con el pago pendiente'; end if;
+  raise notice 'PASS T-RET PIN incorrecto rechazado; verificar avisa el pago pendiente y no se entrega';
 end $$;
 
 reset role;
@@ -135,9 +136,14 @@ select pg_temp.como(:tech);
 do $$
 declare id uuid := (select v::uuid from ctx where k = 'pedido'); pin text := (select v from ctx where k = 'pin');
 begin
-  if public.validar_retiro(id, pin) <> 'ok' then raise exception 'FAIL validación correcta rechazada'; end if;
-  if public.validar_retiro(id, pin) <> 'no-listo' then raise exception 'FAIL el PIN se pudo reutilizar'; end if;
-  raise notice 'PASS T-RET PIN correcto entrega el pedido y no se puede reutilizar';
+  -- DEC-F14-14: verificar no consume; el QR del ticket y el PIN suelto encuentran el mismo pedido.
+  if public.verificar_retiro('paseoya:retiro:' || id || ':' || pin)->>'pedido_id' <> id::text then raise exception 'FAIL el QR no identifica el pedido'; end if;
+  if public.verificar_retiro(pin)->>'pedido_id' <> id::text then raise exception 'FAIL el PIN manual no encuentra el pedido'; end if;
+  if (select p.estado from public.pedidos p join ctx on ctx.k = 'pedido' and p.id = ctx.v::uuid) <> 'READY_FOR_PICKUP' then raise exception 'FAIL verificar cambió el pedido'; end if;
+  if public.confirmar_entrega(id, 'paseoya:retiro:' || id || ':' || pin) <> 'ok' then raise exception 'FAIL entrega correcta rechazada'; end if;
+  if public.confirmar_entrega(id, pin) <> 'usado' then raise exception 'FAIL el código se pudo reutilizar'; end if;
+  if public.verificar_retiro(pin, id)->>'resultado' <> 'usado' then raise exception 'FAIL verificar no detecta el código usado'; end if;
+  raise notice 'PASS T-RET verificar (QR o PIN) no consume; confirmar entrega consume y no se reutiliza';
 end $$;
 
 -- T-CAN · cancelación ------------------------------------------------------------
@@ -296,6 +302,56 @@ begin
   exception when insufficient_privilege then null;
   end;
   raise notice 'PASS F14 otro comercio no ve el contacto ni crea promociones sobre productos ajenos';
+end $$;
+
+-- F14 · Comercio ------------------------------------------------------------------
+reset role;
+select pg_temp.como(:tech);
+do $$
+declare n int; v_id uuid;
+begin
+  update public.comercios set descripcion = 'Nueva descripción', horario = 'Lun a vie · 9:00 a 20:00', abierto = false where id = '10000000-0000-0000-0000-000000000001';
+  get diagnostics n = row_count;
+  if n <> 1 then raise exception 'FAIL TechStore no pudo editar sus campos'; end if;
+  begin
+    update public.comercios set nombre = 'Otro nombre' where id = '10000000-0000-0000-0000-000000000001';
+    raise exception 'FAIL TechStore cambió su nombre (campo del admin)';
+  exception when insufficient_privilege then null;
+  end;
+  update public.comercios set descripcion = 'x' where id = '10000000-0000-0000-0000-000000000002';
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'FAIL TechStore editó otro comercio'; end if;
+  begin
+    delete from public.productos where id = (select producto_id from public.pedido_lineas where pedido_id = (select v::uuid from ctx where k = 'pedido') limit 1);
+    raise exception 'FAIL se eliminó un producto con pedidos';
+  exception when foreign_key_violation then null;
+  end;
+  insert into public.productos (comercio_id, nombre, precio, stock) values ('10000000-0000-0000-0000-000000000001', 'Producto temporal', 10, 1) returning id into v_id;
+  delete from public.productos where id = v_id;
+  get diagnostics n = row_count;
+  if n <> 1 then raise exception 'FAIL no se pudo eliminar un producto sin pedidos'; end if;
+  if not exists (select 1 from public.notificaciones where pedido_id = (select v::uuid from ctx where k = 'pedido') and titulo in ('Nueva compra', 'Nueva reserva')) then
+    raise exception 'FAIL el comercio no recibió el aviso de pedido nuevo';
+  end if;
+  if public.verificar_retiro('hola')->>'resultado' <> 'codigo-invalido' then raise exception 'FAIL código inválido aceptado'; end if;
+  raise notice 'PASS F14 comercio edita sólo descripción/horario/abierto, elimina sólo productos sin pedidos y recibe avisos';
+end $$;
+
+reset role;
+select pg_temp.como(:bout);
+do $$
+begin
+  if public.verificar_retiro('paseoya:retiro:' || (select v from ctx where k = 'pedido') || ':123456')->>'resultado' <> 'ajeno' then raise exception 'FAIL Fashion verificó el QR de TechStore'; end if;
+  if exists (select 1 from public.notificaciones where pedido_id = (select v::uuid from ctx where k = 'pedido')) then raise exception 'FAIL Fashion ve avisos de TechStore'; end if;
+  raise notice 'PASS F14 otro comercio no verifica el QR ni ve los avisos ajenos';
+end $$;
+
+reset role;
+select pg_temp.como(:cliA);
+do $$
+begin
+  if public.verificar_retiro((select v from ctx where k = 'pin'))->>'resultado' <> 'ajeno' then raise exception 'FAIL un cliente usó verificar_retiro'; end if;
+  raise notice 'PASS F14 sólo el comercio puede verificar retiros';
 end $$;
 
 reset role;
