@@ -447,6 +447,84 @@ begin
   raise notice 'PASS F14 el comercio recibe el aviso de promoción aprobada';
 end $$;
 
+-- F11 · RNF-06 Trazabilidad ---------------------------------------------------------
+reset role;
+do $$
+declare v_id uuid := (select v::uuid from ctx where k = 'pedido'); v_estados text;
+begin
+  select string_agg(estado::text || '/' || estado_pago::text, ' > ' order by id) into v_estados from public.pedido_eventos where pedido_id = v_id;
+  if v_estados not like 'CONFIRMED/PENDING%IN_PREPARATION/PENDING%READY_FOR_PICKUP/PENDING%READY_FOR_PICKUP/PAID%DELIVERED/PAID' then
+    raise exception 'FAIL historial incompleto: %', v_estados;
+  end if;
+  if (select actor_id from public.pedido_eventos where pedido_id = v_id order by id limit 1) <> '00000000-0000-0000-0000-0000000000a1'
+     or not exists (select 1 from public.pedido_eventos where pedido_id = v_id and estado = 'DELIVERED' and actor_id = '00000000-0000-0000-0000-0000000000b1') then
+    raise exception 'FAIL el historial no registra quién hizo cada cambio';
+  end if;
+  raise notice 'PASS F11 historial del pedido con cada estado, su fecha y quién lo provocó: %', v_estados;
+end $$;
+
+select pg_temp.como(:cliB);
+do $$
+begin
+  if exists (select 1 from public.pedido_eventos where pedido_id = (select v::uuid from ctx where k = 'pedido')) then
+    raise exception 'FAIL otro cliente ve el historial del pedido';
+  end if;
+  raise notice 'PASS F11 el historial respeta la visibilidad del pedido';
+end $$;
+
+-- F11 · DEC-F11-01 Rechazo del comercio ---------------------------------------------
+reset role;
+create temp table rechazo (id uuid);
+grant all on rechazo to authenticated;
+update public.comercios set abierto = true where id = '10000000-0000-0000-0000-000000000004';
+select pg_temp.como(:cliA);
+do $$
+declare p public.pedidos;
+begin
+  p := public.confirmar_pedido('10000000-0000-0000-0000-000000000004', '[{"producto_id":"20000000-0000-0000-0000-00000000000e","cantidad":3}]', 'QR_SIMULADO', 'f11-rechazo');
+  perform public.simular_pago(p.id);
+  insert into rechazo values (p.id);
+end $$;
+
+reset role;
+select pg_temp.como(:tech);
+do $$
+begin
+  begin
+    perform public.rechazar_pedido((select id from rechazo), 'Sin stock');
+    raise exception 'FAIL otro comercio rechazó el pedido';
+  exception when insufficient_privilege then null;
+  end;
+  raise notice 'PASS F11 otro comercio no puede rechazar el pedido';
+end $$;
+
+reset role;
+select pg_temp.como('00000000-0000-0000-0000-0000000000b3');
+do $$
+declare v_stock_antes int; p public.pedidos;
+begin
+  select stock into v_stock_antes from public.productos where id = '20000000-0000-0000-0000-00000000000e';
+  begin
+    perform public.rechazar_pedido((select id from rechazo), ' ');
+    raise exception 'FAIL se rechazó sin motivo';
+  exception when invalid_parameter_value then null;
+  end;
+  p := public.rechazar_pedido((select id from rechazo), 'Nos quedamos sin almuerzos');
+  if p.estado <> 'CANCELLED' or p.estado_pago <> 'REFUNDED' then raise exception 'FAIL el rechazo no canceló ni reembolsó: % %', p.estado, p.estado_pago; end if;
+  if (select stock from public.productos where id = '20000000-0000-0000-0000-00000000000e') <> v_stock_antes + 3 then raise exception 'FAIL el rechazo no devolvió el stock'; end if;
+  raise notice 'PASS F11 el comercio rechaza con motivo: cancela, reembolsa el QR simulado y devuelve el stock';
+end $$;
+
+reset role;
+select pg_temp.como(:cliA);
+do $$
+begin
+  if not exists (select 1 from public.notificaciones where pedido_id = (select id from rechazo) and titulo = 'Pedido rechazado por la tienda' and cuerpo like '%sin almuerzos%reembolsado%') then
+    raise exception 'FAIL el cliente no recibió el aviso de rechazo con el motivo';
+  end if;
+  raise notice 'PASS F11 el cliente recibe el aviso de rechazo con el motivo';
+end $$;
+
 -- DEC-24 · Eliminación de cuenta y retención -------------------------------------
 reset role;
 select pg_temp.como(:cliA);
