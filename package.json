@@ -10,7 +10,8 @@
     "db:reset": "supabase db reset",
     "migration:new": "supabase migration new",
     "test:db": "docker exec -i supabase_db_paseoya psql -U postgres -d postgres -X < supabase/tests/pruebas_demo.sql",
-    "test:concurrencia": "bash supabase/tests/concurrencia.sh && supabase db reset"
+    "test:concurrencia": "bash supabase/tests/concurrencia.sh && supabase db reset",
+    "respaldo": "bash scripts/respaldo.sh"
   },
   "engines": {
     "node": ">=22.13"

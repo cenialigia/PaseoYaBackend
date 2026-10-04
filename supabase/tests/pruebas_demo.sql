@@ -447,6 +447,76 @@ begin
   raise notice 'PASS F14 el comercio recibe el aviso de promoción aprobada';
 end $$;
 
+-- DEC-24 · Eliminación de cuenta y retención -------------------------------------
+reset role;
+select pg_temp.como(:cliA);
+do $$
+begin
+  perform public.confirmar_pedido('10000000-0000-0000-0000-000000000004', '[{"producto_id":"20000000-0000-0000-0000-00000000000e","cantidad":1}]', 'EFECTIVO', 'dec24-activo');
+  begin
+    perform public.eliminar_cuenta();
+    raise exception 'FAIL se eliminó una cuenta con pedidos en curso';
+  exception when sqlstate 'P0003' then null;
+  end;
+  begin
+    perform public.eliminar_cuenta('00000000-0000-0000-0000-0000000000a2');
+    raise exception 'FAIL un cliente eliminó otra cuenta';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.purgar_datos_operativos();
+    raise exception 'FAIL un cliente ejecutó la purga';
+  exception when insufficient_privilege then null;
+  end;
+  raise notice 'PASS DEC-24 no se elimina con pedidos en curso, ni una cuenta ajena, ni se purga desde la app';
+end $$;
+
+reset role;
+select pg_temp.como(:tech);
+do $$
+begin
+  begin
+    perform public.eliminar_cuenta();
+    raise exception 'FAIL se eliminó una cuenta de comercio';
+  exception when sqlstate 'P0001' then null;
+  end;
+  raise notice 'PASS DEC-24 las cuentas de comercio no se eliminan (se desactivan)';
+end $$;
+
+reset role;
+select pg_temp.como(:cliB);
+do $$
+begin
+  insert into public.favoritos (producto_id) values ('20000000-0000-0000-0000-000000000002');
+  perform public.eliminar_cuenta();
+  raise notice 'PASS DEC-24 el cliente elimina su propia cuenta';
+end $$;
+
+reset role;
+do $$
+declare v jsonb;
+begin
+  if not exists (select 1 from public.perfiles where id = '00000000-0000-0000-0000-0000000000a2' and nombre = 'Cliente eliminado'
+                 and telefono is null and genero is null and fecha_nacimiento is null and avatar_path is null and eliminado_en is not null) then
+    raise exception 'FAIL el perfil no quedó anonimizado';
+  end if;
+  if (select email from auth.users where id = '00000000-0000-0000-0000-0000000000a2') not like 'eliminado-%@paseoya.invalid'
+     or exists (select 1 from auth.identities where user_id = '00000000-0000-0000-0000-0000000000a2')
+     or exists (select 1 from public.favoritos where usuario_id = '00000000-0000-0000-0000-0000000000a2') then
+    raise exception 'FAIL quedaron datos de la cuenta eliminada';
+  end if;
+  insert into public.notificaciones (usuario_id, tipo, titulo, cuerpo, creado_en) values ('00000000-0000-0000-0000-0000000000a1', 'pedido', 'viejo', 'viejo', now() - interval '91 days');
+  insert into public.notificaciones (usuario_id, tipo, titulo, cuerpo) values ('00000000-0000-0000-0000-0000000000a1', 'pedido', 'reciente', 'reciente');
+  insert into public.reportes (cliente_id, mensaje, creado_en) values ('00000000-0000-0000-0000-0000000000a1', 'reporte antiguo', now() - interval '13 months');
+  v := public.purgar_datos_operativos();
+  if (v->>'avisos')::int < 1 or (v->>'reportes')::int < 1 or exists (select 1 from public.notificaciones where titulo = 'viejo')
+     or not exists (select 1 from public.notificaciones where titulo = 'reciente') then
+    raise exception 'FAIL la purga no respeta los plazos: %', v;
+  end if;
+  if not exists (select 1 from cron.job where jobname = 'purgar-datos-operativos') then raise exception 'FAIL falta la tarea programada de purga'; end if;
+  raise notice 'PASS DEC-24 la cuenta queda anonimizada y la purga borra avisos de más de 90 días y reportes de más de 12 meses';
+end $$;
+
 reset role;
 do $$
 begin
