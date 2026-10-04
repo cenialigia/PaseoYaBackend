@@ -298,5 +298,12 @@ begin
   raise notice 'PASS F14 otro comercio no ve el contacto ni crea promociones sobre productos ajenos';
 end $$;
 
+reset role;
+do $$
+begin
+  if public.formato_bs(180) <> 'Bs 180,00' or public.formato_bs(3200.5) <> 'Bs 3.200,50' then raise exception 'FAIL formato_bs no usa el formato es-BO de la app'; end if;
+  raise notice 'PASS F14 montos de notificaciones con formato es-BO (Bs 3.200,50)';
+end $$;
+
 rollback;
 \echo 'Todas las pruebas terminaron sin fallos (transacción revertida).'
