@@ -1,5 +1,9 @@
 # PaseoYA · Backend
 
+[![CI](https://github.com/cenialigia/PaseoYaBackend/actions/workflows/ci.yml/badge.svg)](https://github.com/cenialigia/PaseoYaBackend/actions/workflows/ci.yml)
+
+En cada push o pull request a `main` o `development`, GitHub Actions levanta Supabase local, aplica migraciones y seed, y corre `npm run test:db` y `npm run test:concurrencia`.
+
 Definición reproducible de **Supabase** para PaseoYA: migraciones SQL, RLS, seed sintético y operaciones confiables. No hay servidor Node adicional: Node sólo ejecuta la Supabase CLI (ADR-009).
 
 La documentación vive en el Core, fuera de este repositorio: [cenialigia/documentacionPaseoYa](https://github.com/cenialigia/documentacionPaseoYa). El cliente está en [cenialigia/PaseoYaFrontend](https://github.com/cenialigia/PaseoYaFrontend).
