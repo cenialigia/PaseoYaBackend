@@ -1,0 +1,41 @@
+name: CI
+
+# Pruebas de la base en cada cambio: migraciones + seed en un Supabase local, RLS/flujo y concurrencia.
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  base-de-datos:
+    name: Migraciones y pruebas SQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias (CLI de Supabase)
+        run: npm ci
+
+      # Aplica todas las migraciones y el seed. Se omiten los servicios que las pruebas no usan.
+      - name: Levantar Supabase local
+        run: npx supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector,supavisor,postgres-meta
+
+      - name: Pruebas de RLS, flujo y reglas de negocio
+        run: npm run test:db
+
+      - name: Prueba de concurrencia (última unidad)
+        run: npm run test:concurrencia
+
+      - name: Detener Supabase
+        if: always()
+        run: npx supabase stop --no-backup
